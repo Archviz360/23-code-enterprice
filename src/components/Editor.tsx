@@ -1,14 +1,14 @@
 import React, { useEffect, useRef } from 'react';
-import MonacoEditor from '@monaco-editor/react';
+import MonacoEditor, { OnMount } from '@monaco-editor/react';
+import type * as monaco from 'monaco-editor';
 import { useEditorStore } from '../store/editorStore';
 import { useCollaborationStore } from '../store/collaborationStore';
 import { MonacoBinding } from 'y-monaco';
-import * as Y from 'yjs';
 
 export function Editor() {
   const { content, setContent, language, theme, fontSize, wordWrap } = useEditorStore();
   const { doc, roomId, setBinding } = useCollaborationStore();
-  const editorRef = useRef<any>(null);
+  const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
 
   useEffect(() => {
     if (doc && editorRef.current && roomId) {
@@ -20,9 +20,9 @@ export function Editor() {
       );
       setBinding(binding);
     }
-  }, [doc, roomId]);
+  }, [doc, roomId, setBinding]);
 
-  const handleEditorDidMount = (editor: any) => {
+  const handleEditorDidMount: OnMount = (editor) => {
     editorRef.current = editor;
   };
 

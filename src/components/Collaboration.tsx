@@ -4,10 +4,13 @@ import { useCollaborationStore } from '../store/collaborationStore';
 
 export function Collaboration() {
   const [showInvite, setShowInvite] = useState(false);
+  const [userName, setUserName] = useState('');
   const { roomId, initializeCollaboration, disconnectCollaboration } = useCollaborationStore();
 
   const handleStartCollaboration = () => {
-    const newRoomId = Math.random().toString(36).substring(7);
+    const name = userName || prompt('Enter your name') || 'host';
+    setUserName(name);
+    const newRoomId = `${name}-${Math.random().toString(36).substring(7)}`;
     initializeCollaboration(newRoomId);
     setShowInvite(true);
   };
@@ -17,6 +20,8 @@ export function Collaboration() {
     const formData = new FormData(e.currentTarget);
     const joinRoomId = formData.get('roomId') as string;
     if (joinRoomId) {
+      const name = prompt('Enter your name') || 'guest';
+      setUserName(name);
       initializeCollaboration(joinRoomId);
     }
   };
@@ -34,7 +39,7 @@ export function Collaboration() {
       {showInvite && (
         <div className="absolute right-0 mt-2 w-80 bg-gray-800 rounded-lg shadow-lg border border-gray-700 p-4">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-white text-sm font-medium">Share Room ID</h3>
+            <h3 className="text-white text-sm font-medium">Share Room ID ({userName})</h3>
             <button
               onClick={() => setShowInvite(false)}
               className="text-gray-400 hover:text-white"
@@ -51,6 +56,12 @@ export function Collaboration() {
           >
             Copy Room ID
           </button>
+          <button
+            onClick={disconnectCollaboration}
+            className="w-full mt-2 px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700"
+          >
+            Leave Session
+          </button>
         </div>
       )}
 
@@ -61,6 +72,14 @@ export function Collaboration() {
             <input
               name="roomId"
               placeholder="Enter Room ID"
+              className="flex-1 bg-gray-900 text-gray-300 text-sm rounded px-2 py-1 border border-gray-700 focus:outline-none focus:border-blue-500"
+            />
+          </div>
+          <div className="flex items-center gap-2 mb-4">
+            <input
+              value={userName}
+              onChange={(e) => setUserName(e.target.value)}
+              placeholder="Your Name"
               className="flex-1 bg-gray-900 text-gray-300 text-sm rounded px-2 py-1 border border-gray-700 focus:outline-none focus:border-blue-500"
             />
           </div>
