@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, simpledialog
 import os
 import sys
 from tkinter.scrolledtext import ScrolledText
@@ -352,28 +352,53 @@ class AdvancedTextEditor:
             pass
 
     def find(self):
-        # Implement find functionality
-        pass
+        query = simpledialog.askstring("Find", "Enter text:")
+        if query:
+            self.text_area.tag_remove('find_match', '1.0', tk.END)
+            idx = '1.0'
+            while True:
+                idx = self.text_area.search(query, idx, nocase=1, stopindex=tk.END)
+                if not idx:
+                    break
+                lastidx = f"{idx}+{len(query)}c"
+                self.text_area.tag_add('find_match', idx, lastidx)
+                idx = lastidx
+            self.text_area.tag_config('find_match', background='yellow', foreground='black')
 
     def replace(self):
-        # Implement replace functionality
-        pass
+        find_text = simpledialog.askstring("Find", "Text to replace:")
+        if find_text is None:
+            return
+        replace_text = simpledialog.askstring("Replace", "Replace with:")
+        if replace_text is None:
+            return
+        content = self.text_area.get('1.0', tk.END)
+        self.text_area.delete('1.0', tk.END)
+        self.text_area.insert('1.0', content.replace(find_text, replace_text))
 
     def go_to_line(self):
-        # Implement go to line functionality
-        pass
+        line = simpledialog.askinteger("Go To Line", "Line number:")
+        if line:
+            max_line = int(self.text_area.index(tk.END).split('.')[0])
+            line = max(1, min(line, max_line))
+            self.text_area.mark_set(tk.INSERT, f"{line}.0")
+            self.text_area.see(f"{line}.0")
 
     def manage_tabs(self):
         # Implement tab management
         pass
 
     def toggle_word_wrap(self):
-        # Implement word wrap toggle
-        pass
+        current = self.text_area.cget('wrap')
+        new_wrap = tk.NONE if current != tk.NONE else tk.WORD
+        self.text_area.config(wrap=new_wrap)
 
     def toggle_line_numbers(self):
-        # Implement line numbers toggle
-        pass
+        if self.line_numbers.winfo_viewable():
+            self.line_numbers.pack_forget()
+        else:
+            self.line_numbers.pack(side=tk.LEFT, fill=tk.Y)
+            self.update_line_numbers()
 
     def toggle_fullscreen(self):
         self.root.attributes('-fullscreen', not self.root.attributes('-fullscreen'))

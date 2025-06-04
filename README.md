@@ -30,3 +30,42 @@ Together, let's build something that offers developers another great option—an
 
 I am hoping to be able to release 23 Code Enterprise in 2025/2026. Additionally, I will create a Discord server where we can all communicate and collaborate effectively.
 
+## Getting Started
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) (v18 or newer)
+- [npm](https://www.npmjs.com/)
+- [Python](https://www.python.org/) 3.8+
+
+### Installing
+
+1. Install JavaScript dependencies:
+   ```bash
+   npm install
+   ```
+2. Start the development server:
+   ```bash
+   npm run dev
+   ```
+3. Build and preview the production bundle:
+   ```bash
+   npm run build
+   npm run preview
+   ```
+4. Launch the experimental Tkinter editor:
+   ```bash
+   python "23 code enterprice.py"
+   ```
+
+Collaboration features rely on Yjs signaling and require internet access.
+
+### Testing
+
+Run linting and unit tests with:
+
+```bash
+npm run lint
+npm test
+```
+
