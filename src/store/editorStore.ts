@@ -19,6 +19,7 @@ interface EditorState {
   saveFile: () => void;
   openFile: (file: File) => Promise<void>;
   switchFile: (index: number) => void;
+  closeFile: (index: number) => void;
 }
 
 export const useEditorStore = create<EditorState>((set, get) => ({
@@ -87,4 +88,26 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     content: state.files[index].content,
     language: state.files[index].language,
   })),
+  closeFile: (index) => set((state) => {
+    const files = state.files.filter((_, i) => i !== index);
+    if (files.length === 0) {
+      return {
+        files: [{ name: 'untitled.js', content: '', language: 'javascript' }],
+        currentFile: 0,
+        content: '',
+        language: 'javascript',
+      };
+    }
+
+    let currentFile = state.currentFile;
+    if (index < currentFile) currentFile -= 1;
+    else if (index === currentFile) currentFile = Math.min(currentFile, files.length - 1);
+
+    return {
+      files,
+      currentFile,
+      content: files[currentFile].content,
+      language: files[currentFile].language,
+    };
+  }),
 }));
