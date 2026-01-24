@@ -24,6 +24,16 @@ export function Editor() {
 
   const handleEditorDidMount: OnMount = (editor) => {
     editorRef.current = editor;
+    
+    // Add VS Code-like keybindings
+    editor.addAction({
+      id: 'format-document',
+      label: 'Format Document',
+      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyF],
+      run: () => {
+        editor.getAction('editor.action.formatDocument')?.run();
+      }
+    });
   };
 
   const handleEditorChange = (value: string | undefined) => {
@@ -38,7 +48,7 @@ export function Editor() {
         height="100%"
         language={language}
         value={content}
-        theme={theme}
+        theme={theme === 'vs-dark' ? 'vs-dark' : 'vs'}
         onChange={handleEditorChange}
         onMount={handleEditorDidMount}
         options={{
@@ -50,6 +60,29 @@ export function Editor() {
           renderWhitespace: 'selection',
           automaticLayout: true,
           padding: { top: 10 },
+          fontFamily: "'Fira Code', 'Consolas', 'Courier New', monospace",
+          fontLigatures: true,
+          suggest: {
+            showKeywords: true,
+            showSnippets: true
+          },
+          quickSuggestions: true,
+          parameterHints: {
+            enabled: true
+          },
+          selectionHighlight: true,
+          occurrencesHighlight: true,
+          folding: true,
+          lineDecorationsWidth: 3,
+          lineNumbersMinChars: 3,
+          smoothScrolling: true,
+          mouseWheelZoom: true,
+          scrollbar: {
+            vertical: 'auto',
+            horizontal: 'auto',
+            verticalScrollbarSize: 14,
+            horizontalScrollbarSize: 14,
+          }
         }}
       />
     </div>
