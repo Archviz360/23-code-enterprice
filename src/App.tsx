@@ -1,18 +1,20 @@
 import React from 'react';
-import { Editor } from './components/Editor';
-import { Toolbar } from './components/Toolbar';
-import { Search } from './components/Search';
-import { Tabs } from './components/Tabs';
+import { ActivityBar } from './components/ActivityBar';
+import { Sidebar } from './components/Sidebar';
+import { EditorArea } from './components/EditorArea';
+import { StatusBar } from './components/StatusBar';
+import { TitleBar } from './components/TitleBar';
 
 function App() {
   return (
-    <div className="flex flex-col h-screen bg-gray-900">
-      <Toolbar />
-      <Tabs />
-      <div className="flex-1 relative">
-        <Editor />
-        <Search />
+    <div className="flex flex-col h-screen bg-gray-900 overflow-hidden">
+      <TitleBar />
+      <div className="flex flex-1 overflow-hidden">
+        <ActivityBar />
+        <Sidebar />
+        <EditorArea />
       </div>
+      <StatusBar />
     </div>
   );
 }
