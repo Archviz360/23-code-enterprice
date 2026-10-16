@@ -1,34 +1,21 @@
-import React from 'react';
-import { X } from 'lucide-react';
+import { FileCode2, X } from 'lucide-react';
 import { useEditorStore } from '../store/editorStore';
+import { isDirty } from '../lib/files';
 
-export function Tabs() {
-  const { files, currentFile, switchFile, closeFile } = useEditorStore();
-
-  return (
-    <div className="flex bg-gray-800 border-b border-gray-700 overflow-x-auto">
-      {files.map((file, index) => (
-        <button
-          key={index}
-          onClick={() => switchFile(index)}
-          className={`flex items-center gap-2 px-4 py-2 text-sm ${
-            currentFile === index
-              ? 'bg-gray-900 text-white'
-              : 'text-gray-400 hover:bg-gray-700'
-          }`}
-        >
-          {file.name}
-          {files.length > 1 && (
-            <X
-              className="w-4 h-4 hover:text-red-500"
-              onClick={(e) => {
-                e.stopPropagation();
-                closeFile(index);
-              }}
-            />
-          )}
+export function Tabs({ onClose }: { onClose: (id: string) => void }) {
+  const { files, tabs, activeId, secondaryId, focusedGroup, openTab, toggleSplit, splitOpen } = useEditorStore();
+  const selectedId = focusedGroup === 'secondary' ? secondaryId : activeId;
+  return <div className="tabs" role="tablist" aria-label="Open files">
+    {tabs.map(id => {
+      const file = files.find(f => f.id === id);
+      if (!file) return null;
+      return <div className={`tab ${selectedId === id ? 'active' : ''}`} key={id}>
+        <button role="tab" aria-selected={selectedId === id} onClick={() => openTab(id)} title={file.path}>
+          <FileCode2 size={15} className="file-icon" />{file.path.split('/').pop()}
+          {isDirty(file) && <span className="dirty" aria-label="Unsaved changes">●</span>}
         </button>
-      ))}
-    </div>
-  );
+        <button className="tab-close" onClick={() => onClose(id)} aria-label={`Close ${file.path}`}><X size={14} /></button>
+      </div>;
+    })}<button className="split-button" onClick={toggleSplit} aria-label={splitOpen ? 'Close split editor' : 'Split editor'} title="Split Editor (Ctrl+\\)">◫</button>
+  </div>;
 }

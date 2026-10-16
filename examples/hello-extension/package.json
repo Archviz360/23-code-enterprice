@@ -1,0 +1,11 @@
+{
+  "id": "23code.hello",
+  "displayName": "Hello Custom Extensions",
+  "version": "1.0.0",
+  "engines": { "23code": "^0.2.0" },
+  "main": "extension.cjs",
+  "contributes": {
+    "commands": [{ "id": "hello.uppercase", "title": "Example: Uppercase Document" }],
+    "snippets": [{ "language": "javascript", "prefix": "log23", "body": "console.log(${1:value});", "description": "Log a value" }]
+  }
+}

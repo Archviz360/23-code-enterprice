@@ -1,36 +1,23 @@
 import { create } from 'zustand';
 import * as Y from 'yjs';
 import { WebrtcProvider } from 'y-webrtc';
-import { MonacoBinding } from 'y-monaco';
 
 interface CollaborationState {
-  doc: Y.Doc | null;
-  provider: WebrtcProvider | null;
-  binding: MonacoBinding | null;
-  roomId: string;
-  setBinding: (binding: MonacoBinding) => void;
-  initializeCollaboration: (roomId: string) => void;
+  doc: Y.Doc | null; provider: WebrtcProvider | null; roomId: string; isHost: boolean;
+  initializeCollaboration: (roomId: string, isHost: boolean) => void;
   disconnectCollaboration: () => void;
 }
-
 export const useCollaborationStore = create<CollaborationState>((set, get) => ({
-  doc: null,
-  provider: null,
-  binding: null,
-  roomId: '',
-  setBinding: (binding) => set({ binding }),
-  initializeCollaboration: (roomId) => {
+  doc: null, provider: null, roomId: '', isHost: false,
+  initializeCollaboration: (roomId, isHost) => {
+    get().disconnectCollaboration();
     const doc = new Y.Doc();
-    const provider = new WebrtcProvider(`code-editor-${roomId}`, doc, {
-      signaling: ['wss://signaling.yjs.dev'],
-    });
-
-    set({ doc, provider, roomId });
+    const provider = new WebrtcProvider(`23-code-${roomId}`, doc, { signaling: ['wss://signaling.yjs.dev'] });
+    set({ doc, provider, roomId, isHost });
   },
   disconnectCollaboration: () => {
     const { provider, doc } = get();
-    provider?.destroy();
-    doc?.destroy();
-    set({ doc: null, provider: null, binding: null, roomId: '' });
+    set({ doc: null, provider: null, roomId: '', isHost: false });
+    provider?.destroy(); doc?.destroy();
   },
 }));
