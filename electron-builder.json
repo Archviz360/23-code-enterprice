@@ -3,8 +3,9 @@
   "appId": "org.23code.enterprise",
   "productName": "23 Code Enterprise",
   "directories": { "output": "release" },
-  "files": ["dist/**/*", "electron/**/*", "package.json", "!node_modules/@monaco-editor/**/*", "!node_modules/monaco-editor/**/*", "!node_modules/lucide-react/**/*", "!node_modules/react/**/*", "!node_modules/react-dom/**/*", "!node_modules/@xterm/**/*"],
+  "files": ["dist/**/*", "electron/**/*", "docs/**/*", "package.json", "!node_modules/@monaco-editor/**/*", "!node_modules/monaco-editor/**/*", "!node_modules/lucide-react/**/*", "!node_modules/react/**/*", "!node_modules/react-dom/**/*", "!node_modules/@xterm/**/*"],
   "asar": true,
+  "extraResources": [{ "from": "build/opencode", "to": "opencode" }],
   "asarUnpack": ["node_modules/@lydell/**/*", "node_modules/pyright/**/*"],
   "npmRebuild": false,
   "win": {

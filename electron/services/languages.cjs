@@ -1,10 +1,12 @@
 const { FramedPeer } = require('./rpc.cjs');
 const { pathToFileURL } = require('node:url');
 const { existsSync } = require('node:fs');
+const { connectTcp } = require('./tcp.cjs');
+const path = require('node:path');
 const allowed = new Set(['textDocument/completion', 'completionItem/resolve', 'textDocument/hover', 'textDocument/definition', 'textDocument/references', 'textDocument/prepareRename', 'textDocument/rename', 'textDocument/formatting', 'textDocument/signatureHelp', 'textDocument/documentSymbol', 'textDocument/codeAction']);
 
 class Languages {
-  constructor(workspaces, extensions, emit) { this.workspaces = workspaces; this.extensions = extensions; this.emit = emit; this.sessions = new Map(); }
+  constructor(workspaces, extensions, emit) { this.workspaces = workspaces; this.extensions = extensions; this.emit = emit; this.sessions = new Map(); this.starting = new Map(); }
   async list() {
     const context = this.workspaces.active();
     const config = await this.workspaces.config('languages', { servers: [] });
@@ -14,20 +16,34 @@ class Languages {
   }
   async start(id) {
     const context = this.workspaces.active();
+    const key = `${context.id}:${id}`;
+    if (this.starting.has(key)) return this.starting.get(key);
+    const job = this.startNow(id, context);
+    this.starting.set(key, job);
+    try { return await job; } finally { this.starting.delete(key); }
+  }
+  async startNow(id, context) {
     const config = (await this.list()).find(server => server.id === id);
     if (!config || !Array.isArray(config.languages) || !config.languages.length) throw new Error('Invalid language-server configuration.');
     const sessionId = `${context.id}:${id}`;
     if (this.sessions.has(sessionId)) return this.public(this.sessions.get(sessionId));
-    await this.workspaces.approve('Start language server?', `${config.name ?? id}\n${config.builtin ? 'Bundled Pyright' : `${config.command} ${(config.args ?? []).join(' ')}`}\nRoot: ${context.path}\n\nA language server is executable code with your user permissions. External servers must already be installed in the selected local/remote environment.`);
+    await this.workspaces.approve('Start language server?', `${config.name ?? id}\n${config.tcp ? `TCP ${config.tcp.host ?? '127.0.0.1'}:${config.tcp.port}` : config.builtin ? 'Bundled Pyright' : `${config.command} ${(config.args ?? []).join(' ')}`}\nRoot: ${context.path}\n\nA language server is executable code with your user permissions. External servers must already be installed in the selected local/remote environment.`);
+    if (this.workspaces.active().id !== context.id) throw new Error('The active workspace changed while starting the language server.');
+    const library = context.kind === 'local' ? path : path.posix;
+    const serverRoot = config.root ? library.resolve(context.path, String(config.root).replaceAll('${workspaceFolder}', context.path)) : context.path;
+    const relativeRoot = library.relative(context.path, serverRoot).replaceAll('\\', '/');
+    if (relativeRoot === '..' || relativeRoot.startsWith('../') || library.isAbsolute(relativeRoot)) throw new Error('Language-server root must be inside the workspace root.');
     const bundledEntry = require.resolve('pyright/langserver.index.js');
     // Pyright uses native filesystem/worker paths internally; its resources must live outside ASAR.
     const unpackedEntry = bundledEntry.replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
-    const child = config.builtin === 'pyright'
-      ? this.workspaces.spawn(process.execPath, [existsSync(unpackedEntry) ? unpackedEntry : bundledEntry, '--stdio'], context, { env: { ELECTRON_RUN_AS_NODE: '1' } })
-      : this.workspaces.spawn(config.command, config.args ?? [], context);
+    const child = config.tcp ? await connectTcp(config.tcp, context) : config.builtin === 'pyright'
+      ? this.workspaces.spawn(process.execPath, [existsSync(unpackedEntry) ? unpackedEntry : bundledEntry, '--stdio'], context, { cwd: serverRoot, env: { ELECTRON_RUN_AS_NODE: '1' } })
+      : this.workspaces.spawn(config.command, config.args ?? [], context, { cwd: serverRoot });
+    try { if (this.workspaces.active().id !== context.id) throw new Error('Workspace changed while connecting to the language server.'); }
+    catch (error) { child.kill(); throw error; }
     const peer = new FramedPeer(child);
-    const rootUri = context.kind === 'local' ? pathToFileURL(context.path).toString() : 'file://' + context.path;
-    const session = { id: sessionId, rootId: context.id, configId: id, languages: config.languages, peer, documents: new Map(), rootUri };
+    const rootUri = context.kind === 'local' ? pathToFileURL(serverRoot).toString() : 'file://' + serverRoot.split('/').map(encodeURIComponent).join('/');
+    const session = { id: sessionId, rootId: context.id, configId: id, languages: config.languages, peer, documents: new Map(), rootUri, pathPrefix: context.prefix + (relativeRoot ? relativeRoot + '/' : '') };
     this.sessions.set(sessionId, session);
     peer.on('log', text => this.emit({ type: 'service-log', service: `lsp:${id}`, text }));
     peer.on('exit', () => { if (this.sessions.get(sessionId) === session) this.sessions.delete(sessionId); this.emit({ type: 'language-stopped', id: sessionId }); });
@@ -46,7 +62,7 @@ class Languages {
     try {
       const response = await peer.request('initialize', {
         processId: process.pid, rootUri, workspaceFolders: [{ uri: rootUri, name: context.name }],
-        clientInfo: { name: '23 Code Enterprise', version: '0.2.0' },
+        clientInfo: { name: '23 Code Enterprise', version: require('../../package.json').version },
         capabilities: {
           workspace: { configuration: true, workspaceFolders: true, applyEdit: false },
           textDocument: {
@@ -66,23 +82,34 @@ class Languages {
       return result;
     } catch (error) { this.stop(sessionId); throw error; }
   }
-  public(session) { return { id: session.id, rootId: session.rootId, languages: session.languages, capabilities: session.capabilities ?? {} }; }
+  public(session) { return { id: session.id, rootId: session.rootId, languages: session.languages, capabilities: session.capabilities ?? {}, pathPrefix: session.pathPrefix }; }
   running() { return [...this.sessions.values()].map(session => this.public(session)); }
   document(id, document) {
     const session = this.sessions.get(id);
     if (!session) return;
+    if (session.pathPrefix && !document.path.startsWith(session.pathPrefix)) return;
     const { context } = this.workspaces.locate(document.path);
     if (context.id !== session.rootId || !session.languages.includes(document.language)) return;
     const uri = this.workspaces.uri(document.path);
     const previous = session.documents.get(uri);
-    if (previous?.text === document.text) return uri;
+    if (previous?.text === document.text && previous.language === document.language) return uri;
+    if (previous && previous.language !== document.language) {
+      session.peer.notify('textDocument/didClose', { textDocument: { uri } });
+      session.documents.delete(uri);
+      return this.document(id, document);
+    }
     if (!previous) {
-      session.documents.set(uri, { version: 1, text: document.text });
+      session.documents.set(uri, { version: 1, text: document.text, language: document.language });
       session.peer.notify('textDocument/didOpen', { textDocument: { uri, languageId: document.language, version: 1, text: document.text } });
     } else {
       const version = previous.version + 1;
-      session.documents.set(uri, { version, text: document.text });
-      session.peer.notify('textDocument/didChange', { textDocument: { uri, version }, contentChanges: [{ text: document.text }] });
+      session.documents.set(uri, { version, text: document.text, language: document.language });
+      const sync = session.capabilities?.textDocumentSync;
+      const kind = typeof sync === 'number' ? sync : sync?.change;
+      if (kind === 0) return uri;
+      const lines = previous.text.split(/\r\n|\r|\n/);
+      const change = kind === 2 ? { range: { start: { line: 0, character: 0 }, end: { line: lines.length - 1, character: lines.at(-1).length } }, text: document.text } : { text: document.text };
+      session.peer.notify('textDocument/didChange', { textDocument: { uri, version }, contentChanges: [change] });
     }
     return uri;
   }

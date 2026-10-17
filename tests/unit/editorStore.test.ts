@@ -18,7 +18,7 @@ describe('file paths and languages', () => {
     expect(languageFor('LICENSE')).toBe('plaintext');
     expect(normalizePath('src\\main.ts')).toBe('src/main.ts');
   });
-  it.each(['../secret', '/tmp/file', 'C:\\file', 'a//b', 'a/./b', 'a/../b', 'a\0b', 'a:b', '.GIT/config', 'a./b'])('rejects unsafe path %s', path => {
+  it.each(['../secret', '/tmp/file', 'C:\\file', 'a//b', 'a/./b', 'a/../b', 'a\0b', 'a:b', '.GIT/config', 'a./b', 'CON.txt', 'nested/aux.js', 'LPT1'])('rejects unsafe path %s', path => {
     expect(() => normalizePath(path)).toThrow();
   });
 });
@@ -97,6 +97,20 @@ describe('editor buffers', () => {
 });
 
 describe('saving and conflicts', () => {
+  it('queues repeated saves and uses the completed save as the next disk baseline', async () => {
+    useEditorStore.getState().loadWorkspace('test', [{ path: 'a.ts', content: 'original' }]);
+    const id = useEditorStore.getState().activeId!;
+    useEditorStore.getState().updateContent(id, 'first');
+    let finish!: () => void;
+    vi.mocked(workspace.writeWorkspaceFile).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const first = useEditorStore.getState().saveFile();
+    useEditorStore.getState().updateContent(id, 'second');
+    const second = useEditorStore.getState().saveFile();
+    expect(workspace.writeWorkspaceFile).toHaveBeenCalledTimes(1);
+    finish(); await Promise.all([first, second]);
+    expect(workspace.writeWorkspaceFile).toHaveBeenLastCalledWith('a.ts', 'second', 'first');
+    expect(useEditorStore.getState().files[0]).toMatchObject({ content: 'second', savedContent: 'second' });
+  });
   it('passes the original disk content to conflict checks and clears dirty only on success', async () => {
     useEditorStore.getState().loadWorkspace('test', [{ path: 'a.ts', content: 'original' }]);
     const id = useEditorStore.getState().activeId!;

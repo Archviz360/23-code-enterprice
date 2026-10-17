@@ -31,7 +31,7 @@ export function useIdeServices() {
       for (const session of sessions) {
         const root = roots.find(root => root.id === session.rootId);
         if (!root) continue;
-        for (const file of files.filter(file => session.languages.includes(file.language) && (root.prefix ? file.path.startsWith(root.prefix) : !roots.some(other => other.prefix && file.path.startsWith(other.prefix))))) {
+        for (const file of files.filter(file => session.languages.includes(file.language) && (!session.pathPrefix || file.path.startsWith(session.pathPrefix)) && (root.prefix ? file.path.startsWith(root.prefix) : !roots.some(other => other.prefix && file.path.startsWith(other.prefix))))) {
           void window.desktop!.languageDocument(session.id, { path: file.path, language: file.language, text: file.content }).catch(error => useEditorStore.getState().setMessage(error.message));
         }
       }

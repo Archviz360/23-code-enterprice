@@ -39,7 +39,10 @@ class Extensions {
   }
   async initialize() {
     await fs.mkdir(this.directory, { recursive: true });
-    try { this.states = JSON.parse(await fs.readFile(path.join(this.directory, 'state.json'), 'utf8')); } catch { this.states = {}; }
+    try {
+      const state = JSON.parse(await fs.readFile(path.join(this.directory, 'state.json'), 'utf8'));
+      this.states = state && typeof state === 'object' && !Array.isArray(state) ? state : {};
+    } catch { this.states = {}; }
     for (const extension of await this.list()) if (extension.enabled && extension.manifest.main) {
       try { await this.start(extension); } catch (error) { this.log(extension.id, error.message); }
     }
@@ -52,7 +55,8 @@ class Extensions {
       if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
       try {
         const manifest = JSON.parse(await fs.readFile(path.join(this.directory, entry.name, 'package.json'), 'utf8'));
-        values.push({ id: entry.name, manifest, enabled: this.states[entry.name] !== false, running: this.hosts.has(entry.name) });
+        // Missing/corrupted preferences must not reactivate a disabled host.
+        values.push({ id: entry.name, manifest, enabled: this.states[entry.name] === true, running: this.hosts.has(entry.name) });
       } catch (error) { this.log(entry.name, error.message); }
     }
     return values;
@@ -115,9 +119,14 @@ class Extensions {
     this.hosts.set(extension.id, host);
     child.stdout.on('data', data => this.log(extension.id, data.toString()));
     child.stderr.on('data', data => this.log(extension.id, data.toString()));
-    child.on('exit', () => { if (this.hosts.get(extension.id) === host) this.hosts.delete(extension.id); this.emit({ type: 'extensions-changed' }); });
+    child.on('close', () => {
+      if (this.hosts.get(extension.id) === host) this.hosts.delete(extension.id);
+      for (const [id, pending] of this.pending) if (pending.host === host) { clearTimeout(pending.timer); this.pending.delete(id); pending.reject(new Error('Extension host exited.')); }
+      this.emit({ type: 'extensions-changed' });
+    });
     await new Promise((resolve, reject) => {
       const timer = setTimeout(() => { child.kill(); reject(new Error('Extension activation timed out.')); }, 10000);
+      child.once('close', () => { clearTimeout(timer); reject(new Error('Extension host exited during activation.')); });
       child.on('error', error => { clearTimeout(timer); reject(error); });
       child.on('message', message => {
         if (message.type === 'ready') { clearTimeout(timer); host.commands = message.commands; resolve(); }
@@ -158,8 +167,10 @@ class Extensions {
     const request = crypto.randomUUID();
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { this.pending.delete(request); reject(new Error('Extension command timed out.')); }, 30000);
-      this.pending.set(request, { resolve, reject, timer });
-      host.child.send({ type: 'command', id: request, command, context });
+      this.pending.set(request, { resolve, reject, timer, host });
+      host.child.send({ type: 'command', id: request, command, context }, error => {
+        if (error && this.pending.has(request)) { clearTimeout(timer); this.pending.delete(request); reject(error); }
+      });
     });
   }
   dispose() { for (const host of this.hosts.values()) host.child.kill(); }

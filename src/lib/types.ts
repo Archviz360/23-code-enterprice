@@ -7,17 +7,21 @@ export interface WorkspaceFile {
 }
 
 export interface FileEntry { path: string; content: string }
-export interface GitChange { path: string; index: string; working: string }
+export interface GitChange { path: string; index: string; working: string; originalPath?: string }
 export interface GitStatus { branch: string; changes: GitChange[] }
 export interface CommandResult { stdout: string; stderr: string; code: number }
 export interface WorkspaceRoot { id: string; name: string; key: string; prefix: string; kind: 'local' | 'ssh' | 'wsl' | 'container'; target?: string; location: string }
 export interface WorkspaceSnapshot { name: string; key: string; files: FileEntry[]; skipped: number; roots: WorkspaceRoot[]; activeRootId: string }
 export interface TerminalSession { id: string; name: string; rootId: string; exited: boolean; exitCode: number | null; backlog: string }
-export interface LanguageConfiguration { id: string; name?: string; languages: string[]; command?: string; args?: string[]; builtin?: string; running?: boolean }
-export interface LanguageSession { id: string; rootId: string; languages: string[]; capabilities: Record<string, unknown> }
+export interface LanguageConfiguration { id: string; name?: string; languages: string[]; command?: string; args?: string[]; root?: string; tcp?: { host?: string; port: number }; builtin?: string; running?: boolean }
+export interface LanguageSession { id: string; rootId: string; languages: string[]; capabilities: Record<string, unknown>; pathPrefix?: string }
 export interface TaskConfiguration { label: string; type?: string; command?: string; args?: string[]; source?: string; dependsOn?: string | string[] }
 export interface TaskRun { id: string; label: string; terminalId: string; status: 'running' | 'succeeded' | 'failed'; code?: number }
-export interface DebugConfiguration { name: string; type: string; request?: string; program?: string; adapter?: { command: string; args?: string[] } }
+export interface DebugConfiguration { name: string; type: string; request?: string; program?: string; adapter?: { command?: string; args?: string[]; tcp?: { host?: string; port: number } } }
+export interface EngineProfile { executable?: string; args?: string[]; engineRoot?: string; buildTool?: string; target?: string; platform?: string; configuration?: string; buildMethod?: string; exportPreset?: string; output?: string; actions?: Record<string, { command: string; args: string[] }> }
+export interface EngineProject { id: string; kind: 'unreal' | 'unity' | 'godot' | 'custom'; name: string; file: string; folder: string; rootId: string; profile: EngineProfile }
+export interface EngineInventory { rootId: string; projects: EngineProject[]; installations: { kind: string; name: string; executable: string }[]; externalEditor: { executable: string; flags: string } }
+export interface ExternalOpenRequest { id: string; file: string; workspace?: string; line?: number; column?: number; replacesWorkspace?: boolean; error?: string }
 export interface DebugFrame { id: number; name: string; line: number; column: number; source?: { path?: string; name?: string }; virtualPath?: string }
 export interface DebugScope { name: string; variablesReference: number; expensive: boolean }
 export interface DebugVariable { name: string; value: string; type?: string; variablesReference: number }
@@ -34,6 +38,8 @@ export interface LspPosition { line: number; character: number }
 export interface LspRange { start: LspPosition; end: LspPosition }
 export interface LspDiagnostic { range: LspRange; message: string; severity?: number; source?: string; code?: string | number }
 export type IdeEvent =
+  | { type: 'external-open-request'; id: string }
+  | { type: 'ai-event'; event: import('@opencode/client').OpenCodeEvent }
   | { type: 'terminal-data'; id: string; data: string }
   | { type: 'terminal-exit'; id: string; code: number }
   | { type: 'terminals'; sessions: TerminalSession[] }
@@ -48,6 +54,14 @@ export type IdeEvent =
   | { type: 'debug-state'; state: 'starting' | 'running' | 'paused' | 'stopped'; reason?: string; threadId?: number; name?: string };
 
 export interface DesktopAPI {
+  externalPending(): Promise<ExternalOpenRequest[]>;
+  externalAccept(id: string, replace: boolean): Promise<{ snapshot: WorkspaceSnapshot; path: string; line: number; column: number; replacesWorkspace: boolean }>;
+  externalReject(id: string): Promise<void>;
+  enginesList(): Promise<EngineInventory>;
+  engineChoose(directory?: boolean): Promise<string | null>;
+  engineSave(id: string, profile: EngineProfile, rootId: string): Promise<EngineInventory>;
+  engineRun(id: string, action: string, rootId: string): Promise<{ id: string; name: string }>;
+  aiRequest<T = unknown>(action: string, input?: Record<string, unknown>): Promise<T>;
   openFolder(): Promise<WorkspaceSnapshot | null>;
   refresh(): Promise<WorkspaceSnapshot>;
   readFile(path: string): Promise<string>;

@@ -6,11 +6,11 @@ const { pathToFileURL, fileURLToPath } = require('node:url');
 const { parse } = require('jsonc-parser');
 const { FramedPeer } = require('./rpc.cjs');
 
-const ignored = new Set(['.git', 'node_modules', 'dist', 'build', '.next', '.venv', 'venv', '__pycache__']);
-const binary = /\.(png|jpe?g|gif|webp|ico|pdf|zip|gz|exe|dll|so|woff2?|ttf|mp[34]|wav|sqlite|db|ipynb)$/i;
+const ignored = new Set(['.git', 'node_modules', 'dist', 'build', '.next', '.venv', 'venv', '__pycache__', '.godot', '.vs', 'Binaries', 'Intermediate', 'Saved', 'DerivedDataCache', 'Library', 'Temp', 'Logs', 'obj']);
+const binary = /\.(png|jpe?g|gif|webp|ico|pdf|zip|gz|exe|dll|so|woff2?|ttf|mp[34]|wav|sqlite|db|ipynb|uasset|umap|pak|pck|fbx|blend|pdb|lib|a|o|obj|glb)$/i;
 const quote = value => "'" + String(value).replaceAll("'", "'\\''") + "'";
 function validateRelative(value) {
-  if (typeof value !== 'string' || !value || value.startsWith('/') || value.includes('\\') || value.split('/').some(p => !p || p === '.' || p === '..' || p.toLowerCase() === '.git' || /[<>:"|?*]/.test(p) || /[. ]$/.test(p) || [...p].some(c => c.charCodeAt(0) < 32))) throw new Error('Invalid workspace-relative path.');
+  if (typeof value !== 'string' || !value || value.startsWith('/') || value.includes('\\') || value.split('/').some(p => !p || p === '.' || p === '..' || p.toLowerCase() === '.git' || /^(con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/i.test(p) || /[<>:"|?*]/.test(p) || /[. ]$/.test(p) || [...p].some(c => c.charCodeAt(0) < 32))) throw new Error('Invalid workspace-relative path.');
   return value;
 }
 
@@ -21,8 +21,10 @@ class Workspaces {
     this.roots = [];
     this.activeId = '';
     this.generation = 0;
+    this.mutations = Promise.resolve();
   }
   active() {
+    if (this.installing) throw new Error('Workspace folders are changing. Wait for loading to finish.');
     const context = this.roots.find(root => root.id === this.activeId);
     if (!context) throw new Error('Open or reconnect a workspace folder first.');
     return context;
@@ -74,6 +76,7 @@ class Workspaces {
   }
   async localRoot(folder) {
     const location = await fs.realpath(folder);
+    if (!(await fs.stat(location)).isDirectory()) throw new Error('Workspace root must be a directory.');
     const id = crypto.createHash('sha256').update(location).digest('hex').slice(0, 12);
     return { id, name: path.basename(location), key: location, path: location, kind: 'local', prefix: '' };
   }
@@ -85,8 +88,14 @@ class Workspaces {
     return this.installContexts(add ? [...this.roots, root] : [root]);
   }
   async installContexts(roots) {
+    if (this.installing) throw new Error('Workspace folders are already changing.');
+    this.installing = true;
+    try { await this.mutations; return await this.installNow(roots); }
+    finally { this.installing = false; }
+  }
+  async installNow(roots) {
     if (roots.length > 20) throw new Error('A workspace can contain up to 20 roots.');
-    if (new Set(roots.map(root => root.key)).size !== roots.length) throw new Error('This folder is already in the workspace.');
+    if (new Set(roots.map(root => root.kind === 'local' && process.platform === 'win32' ? root.key.toLowerCase() : root.key)).size !== roots.length) throw new Error('This folder is already in the workspace.');
     // Preserve existing virtual prefixes when adding a root; never reinterpret an existing buffer's path.
     roots.forEach((root, index) => { if (index > 0 && !root.prefix) root.prefix = `@${root.id}/`; });
     const previous = this.roots;
@@ -115,11 +124,15 @@ class Workspaces {
     const files = [];
     let skipped = 0, bytes = 0;
     const walk = async (directory, prefix = '') => {
-      for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+      let entries;
+      try { entries = await fs.readdir(directory, { withFileTypes: true }); }
+      catch (error) { if (['ENOENT', 'EACCES', 'EPERM', 'EBUSY'].includes(error.code)) { skipped++; return; } throw error; }
+      for (const entry of entries) {
         const relative = prefix + entry.name;
         if (entry.isSymbolicLink()) { skipped++; continue; }
         if (entry.isDirectory()) { if (!ignored.has(entry.name)) await walk(path.join(directory, entry.name), relative + '/'); }
         else if (entry.isFile()) {
+          try {
           if (files.length >= 3000 || binary.test(relative)) { skipped++; continue; }
           const full = (await this.resolve(root.prefix + relative)).full;
           const size = (await fs.stat(full)).size;
@@ -127,6 +140,10 @@ class Workspaces {
           const content = await fs.readFile(full, 'utf8');
           if (content.includes('\0')) { skipped++; continue; }
           files.push({ path: relative, content }); bytes += size;
+          } catch (error) {
+            if (['ENOENT', 'EACCES', 'EPERM', 'EBUSY'].includes(error.code) || error.message === 'Invalid workspace-relative path.') { skipped++; continue; }
+            throw error;
+          }
         }
       }
     };
@@ -138,6 +155,19 @@ class Workspaces {
     return context.kind === 'local' ? fs.readFile(full, 'utf8') : context.peer.request('read', { path: relative });
   }
   async write(virtual, content, expected) {
+    return this.mutate(() => this.writeNow(virtual, content, expected));
+  }
+  mutate(operation) {
+    if (this.installing) return Promise.reject(new Error('Workspace folders are changing. Retry the file operation after loading finishes.'));
+    const generation = this.generation;
+    const job = this.mutations.then(() => {
+      if (this.generation !== generation) throw new Error('Workspace changed before the file operation could run.');
+      return operation();
+    });
+    this.mutations = job.catch(() => {});
+    return job;
+  }
+  async writeNow(virtual, content, expected) {
     if (typeof content !== 'string' || typeof expected !== 'string') throw new Error('Invalid content.');
     const { context, relative, full } = await this.resolve(virtual);
     if (context.kind !== 'local') return context.peer.request('write', { path: relative, content, expected });
@@ -146,9 +176,12 @@ class Workspaces {
     if (original !== undefined && (expected === '\0' || original !== expected)) throw new Error('File changed on disk. Export a copy before refreshing.');
     if (original === undefined && expected !== '\0') throw new Error('File was removed on disk. Use Save As to recover it.');
     await fs.mkdir(path.dirname(full), { recursive: true });
-    await fs.writeFile(full, content, 'utf8');
+    await fs.writeFile(full, content, { encoding: 'utf8', flag: original === undefined ? 'wx' : 'w' });
   }
   async rename(from, to) {
+    return this.mutate(() => this.renameNow(from, to));
+  }
+  async renameNow(from, to) {
     const source = await this.resolve(from), destination = await this.resolve(to);
     if (source.context !== destination.context) throw new Error('Move across roots using Save As, then delete the original.');
     if (source.context.kind !== 'local') return source.context.peer.request('rename', { path: source.relative, to: destination.relative });
@@ -157,8 +190,10 @@ class Workspaces {
     await fs.rename(source.full, destination.full);
   }
   async delete(virtual) {
-    const { context, relative, full } = await this.resolve(virtual);
-    return context.kind === 'local' ? fs.unlink(full) : context.peer.request('delete', { path: relative });
+    return this.mutate(async () => {
+      const { context, relative, full } = await this.resolve(virtual);
+      return context.kind === 'local' ? fs.unlink(full) : context.peer.request('delete', { path: relative });
+    });
   }
   async config(name, fallback = {}) {
     const root = this.active();
@@ -188,13 +223,21 @@ class Workspaces {
   }
   async execute(command, args, context = this.active()) {
     const child = this.spawn(command, args, context);
+    child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
     return new Promise((resolve, reject) => {
-      let stdout = '', stderr = '';
-      const timer = setTimeout(() => { child.kill(); reject(new Error('Command timed out.')); }, 30000);
-      child.stdout.on('data', data => { stdout += data; if (stdout.length > 4 * 1024 * 1024) child.kill(); });
-      child.stderr.on('data', data => { stderr += data; });
+      let stdout = '', stderr = '', failure, bytes = 0;
+      const fail = message => { if (!failure) { failure = new Error(message); clearTimeout(timer); child.kill(); reject(failure); } };
+      const timer = setTimeout(() => fail('Command timed out.'), 30000);
+      const append = (data, error) => {
+        if (failure) return;
+        bytes += Buffer.byteLength(data);
+        if (bytes > 4 * 1024 * 1024) { fail('Command output exceeds the 4 MiB limit.'); return; }
+        if (error) stderr += data; else stdout += data;
+      };
+      child.stdout.on('data', data => append(data, false));
+      child.stderr.on('data', data => append(data, true));
       child.on('error', error => { clearTimeout(timer); reject(error); });
-      child.on('close', code => { clearTimeout(timer); if (code !== 0) reject(new Error(stderr || `Command exited ${code}.`)); else resolve(stdout); });
+      child.on('close', code => { clearTimeout(timer); if (failure) reject(failure); else if (code !== 0) reject(new Error(stderr || `Command exited ${code}.`)); else resolve(stdout); });
     });
   }
   async connect(spec, add = false) {

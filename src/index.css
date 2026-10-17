@@ -186,3 +186,44 @@ svg { flex-shrink: 0; }
 .notification > span { flex: 1; overflow-wrap: anywhere; }
 @media (max-width: 850px) { .command-center kbd { display: none; } .sidebar { max-width: 38vw; } .statusbar > div:last-child > span, .statusbar > div:last-child > button:nth-child(2) { display: none; } }
 @media (max-width: 600px) { .titlebar nav { display: none; } .sidebar { max-width: 55vw; } .statusbar > div:first-child > button:first-of-type { display: none; } .statusbar > div:last-child > button:first-child { display: none; } .preview { display: none; } }
+/* Native OpenCode assistant. Content is rendered as text, never executable HTML. */
+.ai-view { display: flex; flex-direction: column; height: 100%; min-height: 0; font-size: 12px; overflow: auto; }
+.ai-controls, .ai-composer, .ai-diffs { padding: 10px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.ai-controls { max-height: 43%; overflow: auto; }
+.ai-view select, .ai-view input:not([type=checkbox]), .ai-view textarea { width: 100%; min-width: 0; background: var(--input); color: inherit; border: 1px solid var(--border, #454545); padding: 6px; border-radius: 3px; margin: 4px 0; }
+.ai-view button { font: inherit; border: 1px solid var(--border, #454545); padding: 5px 7px; border-radius: 3px; }
+.ai-view button:disabled { opacity: .45; }
+.ai-view .icon-button { border: 0; }
+.ai-actions { display: flex; gap: 6px; align-items: center; margin: 5px 0; }
+.ai-actions select { flex: 1; width: 100px; }
+.ai-actions button { display: inline-flex; gap: 5px; align-items: center; }
+.ai-actions small { margin-left: auto; }
+.ai-transcript { flex: 1; min-height: 70px; overflow: auto; padding: 10px; }
+.ai-view pre { font: 12px/1.5 var(--editor-font, Consolas, monospace); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto; margin: 8px 0; }
+.ai-message { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.ai-message.user { border-left: 2px solid #3794ff; padding-left: 8px; }
+.ai-message strong { font-size: 11px; color: #86bfff; }
+.ai-tool, .ai-card { background: #80808012; border: 1px solid var(--border, #454545); border-radius: 4px; padding: 8px; margin: 6px 0; }
+.ai-view summary { cursor: pointer; overflow-wrap: anywhere; padding: 4px 0; }
+.ai-form label { display: block; margin-top: 8px; }
+.ai-view small { display: block; line-height: 1.4; }
+.ai-approvals { flex-shrink: 0; max-height: 34%; overflow: auto; padding: 0 8px; }
+.ai-card.approval { border-color: #c5a36d; }
+.ai-composer { border-top: 1px solid var(--border); border-bottom: 0; }
+.ai-composer textarea { min-height: 75px; resize: vertical; max-height: 200px; }
+.ai-notice { margin: 0; padding: 8px 10px; max-height: 90px; overflow: auto; }
+.ai-diffs { max-height: 25%; overflow: auto; }
+.language-picker { max-height: 90vh; display: flex; flex-direction: column; overflow: auto; }
+.language-picker-controls { padding: 10px 14px; line-height: 1.5; }
+.language-picker-controls > input, .language-picker-controls form input { width: 100%; margin: 4px 0 8px; }
+.language-picker-controls p { margin: 6px 0; }
+.language-picker .palette-results { min-height: 100px; max-height: 38vh; flex-shrink: 0; }
+.language-picker-controls button { padding: 5px 8px; border: 1px solid var(--border); border-radius: 3px; margin: 5px 4px 0 0; }
+.language-picker-controls label { display: block; }
+.grammar-import { font-size: 11px; margin-top: 10px; }
+.grammar-import input { display: block; margin: 5px 0; width: 100%; }
+.engine-view .input-row { display: flex; gap: 5px; }
+.engine-view .input-row input { flex: 1; width: 0; }
+.engine-view > button, .engine-actions button { padding: 6px 9px; border: 1px solid var(--border); margin: 5px 4px 0 0; border-radius: 3px; }
+.engine-actions { margin: 10px 0; }
+.engine-view pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; }

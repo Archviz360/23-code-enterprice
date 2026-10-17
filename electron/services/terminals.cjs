@@ -7,6 +7,7 @@ class Terminals {
   async create(options = {}, approved = false, context = this.workspaces.active()) {
     if (this.sessions.size >= 12) throw new Error('Close an existing terminal before opening another (limit: 12).');
     if (!approved) await this.workspaces.approve('Start interactive terminal?', `Folder: ${context.path}\nContext: ${context.kind}\n\nThis shell has your user permissions and can execute arbitrary commands. Only use trusted projects.`);
+    if (this.sessions.size >= 12) throw new Error('Close an existing terminal before opening another (limit: 12).');
     const windows = context.kind === 'local' && process.platform === 'win32';
     const command = options.command ?? (windows ? 'powershell.exe' : '/bin/sh');
     const args = options.args ?? (windows ? ['-NoLogo', '-NoProfile'] : ['-l']);

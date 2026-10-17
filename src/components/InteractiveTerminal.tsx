@@ -42,7 +42,15 @@ export function InteractiveTerminal({ visible }: { visible: boolean }) {
     resize(); terminal.focus();
     return () => { observer.disconnect(); input.dispose(); events?.(); terminal.dispose(); term.current = null; fit.current = null; };
   }, [activeTerminal]);
-  useEffect(() => { if (visible) requestAnimationFrame(() => { fit.current?.fit(); if (term.current && activeTerminal) void window.desktop?.terminalResize(activeTerminal, term.current.cols, term.current.rows); }); }, [visible, activeTerminal]);
+  useEffect(() => {
+    if (!visible) return;
+    const frame = requestAnimationFrame(() => {
+      if (!host.current?.clientWidth || !host.current.clientHeight) return;
+      fit.current?.fit();
+      if (term.current && activeTerminal) void window.desktop?.terminalResize(activeTerminal, term.current.cols, term.current.rows).catch(() => {});
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [visible, activeTerminal]);
   return <div className="interactive-terminal" hidden={!visible}>
     <div className="terminal-toolbar"><select aria-label="Terminal session" value={activeTerminal ?? ''} onChange={event => setActiveTerminal(event.target.value)}><option value="" disabled>Select a terminal</option>{terminals.map(session => <option key={session.id} value={session.id}>{session.name}{session.exited ? ` (exit ${session.exitCode})` : ''}</option>)}</select><button className="icon-button" aria-label="New terminal" onClick={() => void create()} disabled={!window.desktop || starting}><Plus size={15} /></button><button className="icon-button" aria-label="Kill terminal" disabled={!active} onClick={() => { if (active && window.desktop) void window.desktop.terminalClose(active.id).catch(error => useEditorStore.getState().setMessage(error.message)); }}><Trash2 size={14} /></button><span className="muted">Persistent PTY · Ctrl+C interrupts · commands run with your user permissions</span></div>
     {!window.desktop && <p className="sidebar-message">Shell commands require the desktop app. A browser cannot execute local processes.</p>}

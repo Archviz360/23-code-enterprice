@@ -10,6 +10,9 @@ const range = (value: LspRange) => new monaco.Range(value.start.line + 1, value.
 const point = (value: monaco.Position) => ({ line: value.lineNumber - 1, character: value.column - 1 });
 const virtual = (model: monaco.editor.ITextModel) => model.uri.path.replace(/^\/workspace\//, '');
 const resource = (path: string) => monaco.Uri.from({ scheme: 'file', path: '/workspace/' + path });
+// LSP and Monaco use different completion-kind enum orders.
+const kinds = monaco.languages.CompletionItemKind;
+const completionKinds = [kinds.Text, kinds.Method, kinds.Function, kinds.Constructor, kinds.Field, kinds.Variable, kinds.Class, kinds.Interface, kinds.Module, kinds.Property, kinds.Unit, kinds.Value, kinds.Enum, kinds.Keyword, kinds.Snippet, kinds.Color, kinds.File, kinds.Reference, kinds.Folder, kinds.EnumMember, kinds.Constant, kinds.Struct, kinds.Event, kinds.Operator, kinds.TypeParameter];
 
 async function workspaceEdits(edit: WorkspaceEdit, session: LanguageSession): Promise<monaco.languages.WorkspaceEdit> {
   const edits: monaco.languages.IWorkspaceTextEdit[] = [];
@@ -31,6 +34,7 @@ export function registerLanguageSession(session: LanguageSession) {
   function matches(model: monaco.editor.ITextModel) {
     const roots = useEditorStore.getState().roots;
     const path = virtual(model);
+    if (session.pathPrefix && !path.startsWith(session.pathPrefix)) return false;
     const root = roots.find(root => root.prefix && path.startsWith(root.prefix)) ?? roots.find(root => !root.prefix);
     return root?.id === session.rootId && session.languages.includes(model.getLanguageId());
   }
@@ -58,7 +62,7 @@ export function registerLanguageSession(session: LanguageSession) {
         const items = Array.isArray(response) ? response : response?.items ?? [];
         const word = model.getWordUntilPosition(position);
         return { suggestions: items.map(item => ({
-          label: item.label, kind: Math.max(0, Math.min(27, (item.kind ?? 1) - 1)), detail: item.detail,
+          label: item.label, kind: completionKinds[(item.kind ?? 1) - 1] ?? kinds.Text, detail: item.detail,
           documentation: typeof item.documentation === 'string' ? item.documentation : item.documentation ? { value: item.documentation.value } : undefined,
           insertText: item.textEdit?.newText ?? item.insertText ?? item.label,
           insertTextRules: item.insertTextFormat === 2 ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet : undefined,

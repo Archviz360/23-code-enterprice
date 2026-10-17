@@ -5,6 +5,7 @@ import JsonWorker from 'monaco-editor/languages/features/json/json.worker.js?wor
 import CssWorker from 'monaco-editor/languages/features/css/css.worker.js?worker';
 import HtmlWorker from 'monaco-editor/languages/features/html/html.worker.js?worker';
 import TsWorker from 'monaco-editor/languages/features/typescript/ts.worker.js?worker';
+import { initializeSyntax } from './syntaxLanguages';
 
 self.MonacoEnvironment = {
   getWorker(_id, label) {
@@ -22,5 +23,6 @@ monaco.typescript.typescriptDefaults.setCompilerOptions({
   moduleResolution: monaco.typescript.ModuleResolutionKind.NodeJs,
   esModuleInterop: true,
 });
+initializeSyntax(monaco);
 loader.config({ monaco });
 export { monaco };

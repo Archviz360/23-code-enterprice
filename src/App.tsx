@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Blocks, Code2, Files, GitBranch, Search as SearchIcon, Settings as SettingsIcon, X, Bell, CheckCheck, PanelBottom, FileCode2, Bug, ListTodo, Languages, Monitor } from 'lucide-react';
+import { Blocks, Code2, Files, GitBranch, Search as SearchIcon, Settings as SettingsIcon, X, Bell, CheckCheck, PanelBottom, FileCode2, Bug, ListTodo, Languages, Monitor, Bot, Gamepad2 } from 'lucide-react';
 import type { editor } from 'monaco-editor';
 import { Editor } from './components/Editor';
 import { Toolbar } from './components/Toolbar';
@@ -15,12 +15,17 @@ import { Tasks } from './components/Tasks';
 import { LanguageTools } from './components/LanguageTools';
 import { Remote } from './components/Remote';
 import { Debug } from './components/Debug';
+import { AI } from './components/AI';
+import { LanguagePicker } from './components/LanguagePicker';
+import { GameEngines } from './components/GameEngines';
+import { languageName } from './lib/languageCatalog';
+import { useLanguageStore } from './store/languageStore';
 import { startDebug } from './lib/debugActions';
 import { InputDialog } from './components/InputDialog';
 import { promptText, useInputDialog } from './store/inputDialogStore';
 import { useEditorStore, type Sidebar } from './store/editorStore';
 import { useCollaborationStore } from './store/collaborationStore';
-import { binaryExtensions, isDirty, languageIds, MAX_FILE_SIZE, normalizePath } from './lib/files';
+import { binaryExtensions, isDirty, MAX_FILE_SIZE, normalizePath } from './lib/files';
 import { hasWorkspaceAccess, pickWorkspace, refreshWorkspace, removeWorkspaceFile, renameWorkspaceFile } from './lib/workspace';
 import { monaco } from './lib/monaco';
 import { useIdeStore } from './store/ideStore';
@@ -55,8 +60,11 @@ const commands: PaletteItem[] = [
   { id: 'loadWorkspace', label: 'Workspace: Open Saved Workspace…' },
   { id: 'tasks', label: 'Tasks: Show Build and Test Tasks' },
   { id: 'languages', label: 'Language Servers: Manage' },
+  { id: 'languageMode', label: 'Editor: Change Programming Language' },
+  { id: 'engines', label: 'Game Engines: Connect Unreal, Unity, Godot, or Custom Engine' },
   { id: 'extensions', label: 'Extensions: Install and Manage Custom Extensions' },
   { id: 'remote', label: 'Remote: Connect to SSH, WSL, or Container' },
+  { id: 'ai', label: 'AI: Open OpenCode Assistant', shortcut: 'Ctrl+Alt+A' },
   { id: 'debug', label: 'Debug: Show Run and Debug' },
   { id: 'debugStart', label: 'Debug: Start or Continue', shortcut: 'F5' },
   { id: 'debugStop', label: 'Debug: Stop', shortcut: 'Shift+F5' },
@@ -77,6 +85,8 @@ const activities: { id: Sidebar; label: string; icon: typeof Files }[] = [
   { id: 'git', label: 'Source Control', icon: GitBranch }, { id: 'extensions', label: 'Extensions & Collaboration', icon: Blocks },
   { id: 'debug', label: 'Run and Debug', icon: Bug }, { id: 'tasks', label: 'Build and Tasks', icon: ListTodo },
   { id: 'languages', label: 'Language Servers', icon: Languages }, { id: 'remote', label: 'Remote Workspaces', icon: Monitor },
+  { id: 'ai', label: 'AI Assistant', icon: Bot },
+  { id: 'engines', label: 'Game Engines', icon: Gamepad2 },
 ];
 
 function App() {
@@ -92,9 +102,12 @@ function App() {
   const [primaryInstance, setPrimaryInstance] = useState<editor.IStandaloneCodeEditor | null>(null);
   const [secondaryInstance, setSecondaryInstance] = useState<editor.IStandaloneCodeEditor | null>(null);
   const [palette, setPalette] = useState<'commands' | 'files' | null>(null);
+  const [languagePicker, setLanguagePicker] = useState<string | null>(null);
+  const customLanguages = useLanguageStore(state => state.custom);
   const [markers, setMarkers] = useState<editor.IMarker[]>([]);
   const [cursor, setCursor] = useState({ lineNumber: 1, column: 1, selected: 0 });
   const [sidebarWidth, setSidebarWidth] = useState(280);
+  useEffect(() => { if (state.sidebar === 'ai' || state.sidebar === 'engines') setSidebarWidth(width => Math.max(width, 380)); }, [state.sidebar]);
   const [panelHeight, setPanelHeight] = useState(240);
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
 
@@ -114,6 +127,37 @@ function App() {
     const found = useEditorStore.getState().files.find(f => f.path === path);
     if (found) reveal(found.id, line, column);
   }, [reveal]);
+  useEffect(() => {
+    const api = window.desktop;
+    if (!api) return;
+    let processing = false, again = false, disposed = false;
+    const processRequests = async () => {
+      if (processing) { again = true; return; }
+      processing = true;
+      try {
+        do {
+          again = false;
+          for (const request of await api.externalPending()) {
+            if (disposed) return;
+            try {
+              if (request.error) throw new Error(request.error);
+              const store = useEditorStore.getState();
+              if (request.replacesWorkspace && store.files.some(isDirty) && !confirm(`An external editor request will replace this workspace with ${request.workspace}. Save unsaved changes first. Continue?`)) { await api.externalReject(request.id); continue; }
+              const result = await api.externalAccept(request.id, !!request.replacesWorkspace);
+              if (result.replacesWorkspace) useCollaborationStore.getState().disconnectCollaboration();
+              store.acceptWorkspace(result.snapshot, !result.replacesWorkspace);
+              const file = useEditorStore.getState().files.find(file => file.path === result.path);
+              if (file) reveal(file.id, result.line, result.column);
+            } catch (error) { await api.externalReject(request.id); report(error); }
+          }
+        } while (again && !disposed);
+      } catch (error) { if (!disposed) report(error); }
+      finally { processing = false; }
+    };
+    const off = api.onEvent(event => { if (event.type === 'external-open-request') void processRequests(); });
+    void processRequests();
+    return () => { disposed = true; off(); };
+  }, [reveal, report]);
   const closeTab = useCallback((id: string) => {
     // Closing a tab never deletes its buffer. Unsaved text remains in the explorer and recovery.
     useEditorStore.getState().closeTab(id);
@@ -208,8 +252,11 @@ function App() {
         case 'settings': store.setSidebar('settings'); break;
         case 'extensions': store.setSidebar('extensions'); break;
         case 'languages': store.setSidebar('languages'); break;
+        case 'languageMode': if (current) setLanguagePicker(current.id); break;
+        case 'engines': store.setSidebar('engines'); break;
         case 'tasks': store.setSidebar('tasks'); break;
         case 'remote': store.setSidebar('remote'); break;
+        case 'ai': store.setSidebar('ai'); setSidebarWidth(width => Math.max(width, 380)); break;
         case 'debug': store.setSidebar('debug'); break;
         case 'git': store.setSidebar('git'); break;
         case 'toggleSidebar': store.toggleSidebar(); break;
@@ -257,6 +304,7 @@ function App() {
       else if (modifier && key === 'j') id = 'togglePanel';
       else if (modifier && key === '`') id = 'terminal';
       else if (modifier && key === '\\') id = 'split';
+      else if (modifier && event.altKey && key === 'a') id = 'ai';
       else if (key === 'f5') id = event.shiftKey ? 'debugStop' : 'debugStart';
       else if (key === 'f9') id = 'breakpoint';
       else if (key === 'f10') id = 'debugNext';
@@ -311,6 +359,24 @@ function App() {
     if (!state.splitOpen && primaryInstance) { editorRef.current = primaryInstance; setInstance(primaryInstance); }
   }, [state.splitOpen, primaryInstance]);
   useEffect(() => {
+    // Refactorings can modify models not mounted in either editor group.
+    // Subscribe to every workspace model, not only MonacoEditor's onChange.
+    const subscriptions = new Map<editor.ITextModel, { dispose(): void }>();
+    const attach = (model: editor.ITextModel) => {
+      if (!model.uri.path.startsWith('/workspace/')) return;
+      subscriptions.set(model, model.onDidChangeContent(() => {
+        const store = useEditorStore.getState();
+        const file = store.files.find(file => '/workspace/' + file.path === model.uri.path);
+        const content = model.getValue();
+        if (file && file.content !== content) store.updateContent(file.id, content);
+      }));
+    };
+    monaco.editor.getModels().forEach(attach);
+    const created = monaco.editor.onDidCreateModel(attach);
+    const removed = monaco.editor.onWillDisposeModel(model => { subscriptions.get(model)?.dispose(); subscriptions.delete(model); });
+    return () => { created.dispose(); removed.dispose(); subscriptions.forEach(listener => listener.dispose()); };
+  }, []);
+  useEffect(() => {
     const paths = new Set(state.files.map(file => '/workspace/' + file.path));
     const activeModels = new Set([primaryInstance?.getModel(), state.splitOpen ? secondaryInstance?.getModel() : null]);
     for (const model of monaco.editor.getModels()) if (model.uri.path.startsWith('/workspace/') && !paths.has(model.uri.path) && !activeModels.has(model)) model.dispose();
@@ -346,7 +412,7 @@ function App() {
   const sidebarContent = state.sidebar === 'explorer' ? <Explorer command={id => void command(id)} rename={id => void rename(id)} remove={id => void remove(id)} />
     : state.sidebar === 'search' ? <Search reveal={reveal} /> : state.sidebar === 'settings' ? <Settings />
     : state.sidebar === 'git' ? <Git reveal={revealPath} />
-    : state.sidebar === 'debug' ? <Debug reveal={revealPath} /> : state.sidebar === 'tasks' ? <Tasks /> : state.sidebar === 'languages' ? <LanguageTools /> : state.sidebar === 'remote' ? <Remote /> : <Extensions />;
+    : state.sidebar === 'debug' ? <Debug reveal={revealPath} /> : state.sidebar === 'tasks' ? <Tasks /> : state.sidebar === 'languages' ? <LanguageTools /> : state.sidebar === 'remote' ? <Remote /> : state.sidebar === 'ai' ? <AI /> : state.sidebar === 'engines' ? <GameEngines /> : <Extensions />;
   return <div className={`workbench ${state.settings.theme === 'light' ? 'light' : ''}`}>
     <Toolbar command={id => void command(id)} palette={() => setPalette('commands')} />
     <input ref={input} type="file" multiple hidden aria-label="Open local files" onChange={async e => {
@@ -378,10 +444,11 @@ function App() {
         <div className="panel-container" style={{ height: state.panelOpen ? panelHeight : 0 }}>{state.panelOpen && <div className="resize-handle horizontal" onPointerDown={e => startResize(e, 'panel')} />}<Panel markers={markers} reveal={revealPath} /></div>
       </main>
     </div>
-    <footer className="statusbar"><div><span className="remote-indicator"><Code2 size={13} /></span><button onClick={() => state.setSidebar('git')}><GitBranch size={13} />{window.desktop ? 'Source Control' : 'Browser'}</button><button onClick={() => state.setPanel('problems')}><span>⊗ {markers.filter(m => m.severity === 8).length}</span><span>⚠ {markers.filter(m => m.severity !== 8).length}</span></button></div><div>{file && <><button onClick={() => void command('line')}>Ln {cursor.lineNumber}, Col {cursor.column}{cursor.selected ? ` (${cursor.selected} selected)` : ''}</button><button onClick={() => state.setSidebar('settings')}>Spaces: {state.settings.tabSize}</button><span>UTF-8</span><span>{file.content.includes('\r\n') ? 'CRLF' : 'LF'}</span><select aria-label="Language mode" value={file.language} onChange={e => state.setLanguage(file.id, e.target.value)}>{[...new Set([...languageIds, 'dockerfile', file.language])].sort().map(lang => <option key={lang}>{lang}</option>)}</select></>}<button title="Toggle panel" aria-label="Toggle bottom panel" onClick={state.togglePanel}><PanelBottom size={14} /></button><span title="Local recovery enabled"><CheckCheck size={14} /></span><button title="Notifications" aria-label="Notifications" onClick={() => state.setMessage('Session recovery is local to this device. Save writes files to disk; reopening a folder restores filesystem access.')}><Bell size={14} /></button></div></footer>
+    <footer className="statusbar"><div><span className="remote-indicator"><Code2 size={13} /></span><button onClick={() => state.setSidebar('git')}><GitBranch size={13} />{window.desktop ? 'Source Control' : 'Browser'}</button><button onClick={() => state.setPanel('problems')}><span>⊗ {markers.filter(m => m.severity === 8).length}</span><span>⚠ {markers.filter(m => m.severity !== 8).length}</span></button></div><div>{file && <><button onClick={() => void command('line')}>Ln {cursor.lineNumber}, Col {cursor.column}{cursor.selected ? ` (${cursor.selected} selected)` : ''}</button><button onClick={() => state.setSidebar('settings')}>Spaces: {state.settings.tabSize}</button><span>UTF-8</span><span>{file.content.includes('\r\n') ? 'CRLF' : 'LF'}</span><button aria-label="Language mode" title="Change programming language" onClick={() => setLanguagePicker(file.id)}>{languageName(file.language, customLanguages)}</button></>}<button title="Toggle panel" aria-label="Toggle bottom panel" onClick={state.togglePanel}><PanelBottom size={14} /></button><span title="Local recovery enabled"><CheckCheck size={14} /></span><button title="Notifications" aria-label="Notifications" onClick={() => state.setMessage('Session recovery is local to this device. Save writes files to disk; reopening a folder restores filesystem access.')}><Bell size={14} /></button></div></footer>
     {state.message && <div className="notification" role="status"><span>{state.message}</span><button className="icon-button" aria-label="Dismiss notification" onClick={() => state.setMessage('')}><X size={16} /></button></div>}
     {palette && <Palette mode={palette} items={palette === 'commands' ? [...commands, ...extensionCommands.map(command => ({ id: `extension/${command.extensionId}/${command.id}`, label: command.title, detail: command.extensionId }))] : state.files.map(f => ({ id: f.id, label: f.path.split('/').pop()!, detail: f.path }))} close={() => { setPalette(null); editorRef.current?.focus(); }} choose={id => { if (palette === 'commands') void command(id); else { state.openTab(id); setPalette(null); } }} />}
     <InputDialog />
+    {languagePicker && <LanguagePicker fileId={languagePicker} close={() => setLanguagePicker(null)} />}
   </div>;
 }
 export default App;

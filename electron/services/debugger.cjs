@@ -1,5 +1,6 @@
 const path = require('node:path');
 const { FramedPeer } = require('./rpc.cjs');
+const { connectTcp } = require('./tcp.cjs');
 
 class DebuggerService {
   constructor(workspaces, emit) { this.workspaces = workspaces; this.emit = emit; this.session = null; this.breakpoints = {}; }
@@ -8,6 +9,12 @@ class DebuggerService {
     return [{ name: 'Node: Debug active JavaScript file', type: 'node', request: 'launch', program: '${file}', builtin: true }, ...(value.configurations ?? [])];
   }
   async start(name, activeFile, breakpoints = {}) {
+    if (this.starting || this.session) throw new Error('Stop the current debug session first.');
+    this.starting = true;
+    try { return await this.startNow(name, activeFile, breakpoints); }
+    finally { this.starting = false; }
+  }
+  async startNow(name, activeFile, breakpoints = {}) {
     if (this.session) throw new Error('Stop the current debug session first.');
     const config = (await this.configurations()).find(value => value.name === name);
     if (!config) throw new Error('Debug configuration not found.');
@@ -19,14 +26,20 @@ class DebuggerService {
     const configuration = Object.fromEntries(Object.entries(config).map(([key, value]) => [key, Array.isArray(value) ? value.map(expand) : expand(value)]));
     if (configuration.type === 'node' && context.kind !== 'local') throw new Error('For remote debugging configure a DAP adapter installed on the target. The bundled Node adapter runs locally.');
     await this.workspaces.approve(`Start debugger: ${name}?`, `${configuration.program ?? configuration.adapter?.command ?? name}\n\nDebugging runs the program and adapter with your user permissions. Debugging reads saved files on disk.`);
+    if (this.workspaces.active().id !== context.id) throw new Error('The active workspace changed while starting the debugger.');
     let child;
     if (configuration.type === 'node') {
       if (!configuration.program || !/\.(c?js|mjs)$/i.test(configuration.program)) throw new Error('The bundled Node debugger supports saved JavaScript files. Compile TypeScript first, or configure a DAP adapter.');
       child = this.workspaces.spawn(process.execPath, [path.join(__dirname, '../node-debug-adapter.cjs')], context, { env: { ELECTRON_RUN_AS_NODE: '1' } });
     } else {
-      if (!configuration.adapter?.command) throw new Error('Custom debugging needs adapter.command and adapter.args in launch.json.');
-      child = this.workspaces.spawn(configuration.adapter.command, configuration.adapter.args ?? [], context);
+      if (configuration.adapter?.tcp) child = await connectTcp(configuration.adapter.tcp, context);
+      else {
+        if (!configuration.adapter?.command) throw new Error('Custom debugging needs adapter.command/adapter.args or a loopback adapter.tcp in launch.json.');
+        child = this.workspaces.spawn(configuration.adapter.command, configuration.adapter.args ?? [], context);
+      }
     }
+    try { if (this.workspaces.active().id !== context.id) throw new Error('Workspace changed while connecting to the debug adapter.'); }
+    catch (error) { child.kill(); throw error; }
     const peer = new FramedPeer(child, 'dap');
     const session = { peer, context, state: 'starting', name, threadId: 1 };
     this.session = session; this.breakpoints = breakpoints;

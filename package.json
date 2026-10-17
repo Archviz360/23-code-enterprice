@@ -1,7 +1,7 @@
 {
   "name": "23-code-enterprise",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.4.0",
   "description": "A local-first, VS Code-style editor for desktop and browser",
   "main": "electron/main.cjs",
   "engines": { "node": "^22.12.0 || >=24.0.0" },
@@ -14,9 +14,10 @@
     "test:e2e": "npm run build && playwright test",
     "desktop:setup": "node node_modules/electron/install.js",
     "desktop": "npm run build && electron .",
-    "package:win": "npm run build && node scripts/create-icon.cjs && electron-builder --win --x64 --publish never",
-    "package:win:dir": "npm run build && node scripts/create-icon.cjs && electron-builder --win --x64 --dir --publish never",
+    "package:win": "npm run build && node scripts/create-icon.cjs && node scripts/prepare-opencode.cjs && electron-builder --win --x64 --publish never",
+    "package:win:dir": "npm run build && node scripts/create-icon.cjs && node scripts/prepare-opencode.cjs && electron-builder --win --x64 --dir --publish never",
     "test:packaged": "node scripts/test-packaged.cjs",
+    "languages:update": "node scripts/update-language-catalog.cjs",
     "desktop:dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron . --dev\"",
     "lint": "eslint .",
     "preview": "vite preview"
@@ -24,6 +25,7 @@
   "dependencies": {
     "@lydell/node-pty": "1.2.0-beta.15",
     "@monaco-editor/react": "^4.6.0",
+    "@opencode/client": "2.0.31",
     "@xterm/xterm": "^6.0.0",
     "@xterm/addon-fit": "^0.11.0",
     "jsonc-parser": "^3.3.1",
@@ -39,8 +41,11 @@
     "zustand": "^4.5.2",
     "yauzl": "^3.4.0"
   },
-  "overrides": { "dompurify": "^3.4.17" },
+  "overrides": { "dompurify": "^3.4.17", "@electron/get": { "global-agent": "^4.1.3" } },
   "devDependencies": {
+    "shiki": "4.5.0",
+    "yaml": "^2.8.1",
+    "@opencode/cli": "2.0.31",
     "@eslint/js": "^9.9.1",
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",

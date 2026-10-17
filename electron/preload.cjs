@@ -1,6 +1,14 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('desktop', {
+  aiRequest: (action, input) => ipcRenderer.invoke('ai:request', action, input),
+  enginesList: () => ipcRenderer.invoke('engines:list'),
+  engineChoose: directory => ipcRenderer.invoke('engines:choose', directory),
+  engineSave: (id, profile, rootId) => ipcRenderer.invoke('engines:save', id, profile, rootId),
+  engineRun: (id, action, rootId) => ipcRenderer.invoke('engines:run', id, action, rootId),
+  externalPending: () => ipcRenderer.invoke('external:pending'),
+  externalAccept: (id, replace) => ipcRenderer.invoke('external:accept', id, replace),
+  externalReject: id => ipcRenderer.invoke('external:reject', id),
   openFolder: () => ipcRenderer.invoke('workspace:open'),
   refresh: () => ipcRenderer.invoke('workspace:refresh'),
   readFile: path => ipcRenderer.invoke('file:read', path),

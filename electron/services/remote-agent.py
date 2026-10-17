@@ -6,7 +6,7 @@ import sys
 ROOT = os.path.realpath(sys.argv[1])
 if not os.path.isdir(ROOT):
     raise ValueError('Remote workspace folder does not exist or is not a directory')
-IGNORED = {'.git', 'node_modules', 'dist', 'build', '.venv', 'venv', '__pycache__', '.next'}
+IGNORED = {'.git', 'node_modules', 'dist', 'build', '.venv', 'venv', '__pycache__', '.next', '.godot', '.vs', 'Binaries', 'Intermediate', 'Saved', 'DerivedDataCache', 'Library', 'Temp', 'Logs', 'obj'}
 
 def resolve(relative):
     if not isinstance(relative, str) or not relative or relative.startswith('/') or '\x00' in relative or '\\' in relative:

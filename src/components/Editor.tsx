@@ -6,6 +6,8 @@ import { useCollaborationStore } from '../store/collaborationStore';
 import { MonacoBinding } from 'y-monaco';
 import { monaco } from '../lib/monaco';
 import { useIdeStore } from '../store/ideStore';
+import { loadLanguageSyntax, registerLanguageMode } from '../lib/syntaxLanguages';
+import { useLanguageStore } from '../store/languageStore';
 
 interface Props { onMount: (editor: editor.IStandaloneCodeEditor) => void; editorInstance: editor.IStandaloneCodeEditor | null; fileId?: string | null; onFocus?: () => void }
 export function Editor({ onMount, editorInstance, fileId: selectedFileId, onFocus }: Props) {
@@ -14,6 +16,11 @@ export function Editor({ onMount, editorInstance, fileId: selectedFileId, onFocu
   const file = files.find(f => f.id === (selectedFileId ?? activeId));
   const fileId = file?.id;
   const filePath = file?.path;
+  const grammars = useLanguageStore(state => state.grammars);
+  if (file) registerLanguageMode(file.language);
+  useEffect(() => {
+    if (file?.language) void loadLanguageSyntax(file.language).catch(error => useEditorStore.getState().setMessage(`Highlighting unavailable: ${error.message}. Text editing still works.`));
+  }, [file?.language, grammars]);
   useEffect(() => {
     if (!doc || !provider || !editorInstance || !fileId || !filePath) return;
     const model = editorInstance.getModel();

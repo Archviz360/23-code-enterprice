@@ -33,6 +33,15 @@ async function exerciseEditor(page: Page) {
   await page.keyboard.insertText('{"invalid": }');
   await page.keyboard.press('Control+Shift+m');
   await expect(page.locator('.problem-list .error').first()).toBeVisible({ timeout: 20000 });
+  // Exercise a lazily imported TextMate grammar from the actual offline ASAR,
+  // not just Monaco's pre-existing built-in JSON worker.
+  await page.keyboard.press('Control+n');
+  await page.getByRole('textbox', { name: 'File path', exact: true }).fill('packaged.f90');
+  await page.getByRole('button', { name: 'OK', exact: true }).click();
+  await page.locator('.monaco-editor textarea').first().focus();
+  await page.keyboard.insertText('program hello\nprint *, "offline"\nend program hello');
+  await expect(page.getByRole('button', { name: 'Language mode', exact: true })).toHaveText('Fortran Free Form');
+  await expect.poll(() => page.locator('.monaco-editor .view-line').first().locator('span span').count()).toBeGreaterThan(1);
 }
 
 test('unpacked Windows executable starts offline with native bridge and language workers', async () => {
